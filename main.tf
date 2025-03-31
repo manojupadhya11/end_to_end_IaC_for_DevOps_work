@@ -87,38 +87,49 @@ resource "aws_security_group" "DevOps_SG" {
     }
 }
 resource "aws_instance" "ec2_instance" {
-    ami = var.ami_id
-    instance_type = var.instance_type
-    subnet_id = aws_subnet.DevOps_subnet1.id
-    vpc_security_group_ids = [aws_security_group.DevOps_SG.id]
-    key_name = var.key_name
-    #user_data = base64encode(file("${path.module}/userdata.sh"))
-    associate_public_ip_address = true
-    tags = {
-      Name = "DevOps_EC2_Instance"
-    }
+  ami = var.ami_id
+  instance_type = var.instance_type
+  subnet_id = aws_subnet.DevOps_subnet1.id
+  vpc_security_group_ids = [aws_security_group.DevOps_SG.id]
+  key_name = var.key_name
+  #user_data = base64encode(file("${path.module}/userdata.sh"))
+  associate_public_ip_address = true
+  #user_data = file("userdata-script.sh")
 
-      # Define the file to be copied
-    provisioner "file" {
-        source      = "userdata.sh"
-        destination = "/home/ec2-user/userdata.sh"  # Destination path on the EC2 instance
-    }
+  #Kubernetes userdata
+  user_data = <<-EOF
+    #!/bin/bash
+    echo "docker installation begins"
+    yum install docker -y
+    systemctl enable docker
+    systemctl start docker
+    docker --version
 
-  # SSH connection block
-  connection {
-    type        = "ssh"
-    user        = "ec2-user"  # Modify for your EC2 instance user
-    private_key = var.key_name
-    host        = self.public_ip
+    echo "Docker is installed succesfully"
+
+    echo "Creation of Jenkinks single node Server using docker"
+    docker run -p 8080:8080 -p 50000:50000 -dit --name jenkins --restart=on-failure -v jenkins_home:/var/jenkins_home jenkins/jenkins:lts-jdk17
+    docker exec -it jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+
+    echo "Jenkins installed succesfully"
+
+
+    echo "Kubernetes installation"
+    #Install Minikube
+    curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
+    rpm -Uvh minikube-latest.x86_64.rpm
+    minikube start --force
+
+    #Install kubectl
+    curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.3/2023-11-14/bin/linux/amd64/kubectl
+    chmod +x ./kubectl
+    cp ./kubectl /usr/bin/
+    echo "minikube cluster and kubectl agent installed"
+    EOF
+  tags = {
+    Name = "DevOps_EC2_Instance"
   }
 
-  # Optionally, run a command after the file is copied
-  provisioner "remote-exec" {
-    inline = [
-      "chmod +x /home/ec2-user/userdata.sh",  # Example to change permissions
-      "sh userdata.sh"
-    ]
-  }
 }
   
 
